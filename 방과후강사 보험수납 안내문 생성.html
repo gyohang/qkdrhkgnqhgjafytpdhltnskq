@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>방과후 강사 고용/산재보험 정산 툴</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel processing -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+    </style>
+</head>
+<body class="p-6 md:p-10 flex flex-col items-center">
+
+    <div class="max-w-4xl w-full bg-white rounded-2xl shadow-xl p-8">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">방과후 강사 고용/산재보험 정산 및 안내문 생성</h1>
+
+        <!-- Input Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-gray-50 p-6 rounded-xl border border-gray-200">
+            <!-- 고용보험 파일 -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">고용보험 엑셀 파일</label>
+                <div class="text-[11px] text-gray-600 bg-gray-200 px-2 py-1.5 rounded mb-2 inline-block font-medium">
+                    고산토 &gt; 부과고지 보험료 조회 &gt; 당월보험료 부과내역조회(간편조회)
+                </div>
+                <input type="file" id="emp-file" accept=".xls,.xlsx" class="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-md file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-blue-50 file:text-blue-700
+                    hover:file:bg-blue-100 cursor-pointer"
+                />
+                <p class="text-xs text-gray-500 mt-1">* '근로자실업 급여보험료' 열 또는 '합계' 열 참조</p>
+            </div>
+
+            <!-- 산재보험 파일 -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">산재보험 엑셀 파일</label>
+                <div class="text-[11px] text-gray-600 bg-gray-200 px-2 py-1.5 rounded mb-2 inline-block font-medium">
+                    고산토 &gt; 부과고지 보험료 조회 &gt; 당월보험료 부과내역조회(간편조회)
+                </div>
+                <input type="file" id="ind-file" accept=".xls,.xlsx" class="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-md file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-green-50 file:text-green-700
+                    hover:file:bg-green-100 cursor-pointer"
+                />
+                <p class="text-xs text-gray-500 mt-1">* '합계' 열 참조 (자동으로 나누기 2 계산)</p>
+            </div>
+
+            <!-- 기본 정보 입력 -->
+            <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-5 gap-4 border-t pt-4 mt-2">
+                <div class="w-full">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">학교명</label>
+                    <input type="text" id="school-name" value="" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" placeholder="예: OO초" />
+                </div>
+                <div class="w-full">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">입금 기한</label>
+                    <input type="date" id="deposit-date" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" />
+                </div>
+                <div class="w-full">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">은행명</label>
+                    <input type="text" id="bank-name" value="" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" placeholder="예: OO은행" />
+                </div>
+                <div class="w-full">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">계좌번호</label>
+                    <input type="text" id="account-number" value="" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" placeholder="예: 세외계좌" />
+                </div>
+                <div class="w-full flex items-end h-full mt-4 md:mt-0">
+                    <button onclick="processFiles()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-2 rounded-md transition duration-200 text-sm">
+                        데이터 정산 생성
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error/Message Box -->
+        <div id="message-box" class="hidden mb-6 p-4 rounded-md text-sm font-medium"></div>
+
+        <div id="troubleshoot-box" class="hidden mb-6 p-4 rounded-md text-sm text-amber-800 bg-amber-50 border border-amber-200">
+            <strong>💡 엑셀 파일 처리 실패 시 확인해주세요!</strong>
+            <ul class="list-disc pl-5 mt-2 space-y-1">
+                <li><strong>비밀번호:</strong> 다운로드 받은 엑셀에 비밀번호가 걸려있다면, 엑셀을 열어 <strong>'다른 이름으로 저장'</strong>을 눌러 비밀번호 없는 일반 파일로 저장한 뒤 업로드해주세요.</li>
+                <li><strong>파일 형식 (매우 중요):</strong> 관공서에서 다운로드한 <strong>.xls</strong> 파일은 실제로는 엑셀 형식이 아닐 수 있습니다. 해당 파일을 엑셀 프로그램으로 열고 <strong>[다른 이름으로 저장] -> 파일 형식을 'Excel 통합 문서 (*.xlsx)'로 변경</strong>하여 새로 저장한 뒤 업로드해보세요.</li>
+            </ul>
+        </div>
+
+        <!-- Output Section (Hidden initially) -->
+        <div id="output-section" class="hidden fade-in">
+            <h2 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">생성 결과</h2>
+            
+            <div class="flex flex-col gap-8">
+                <!-- 엑셀 테이블 미리보기 영역 -->
+                <div class="flex flex-col h-full w-full">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-sm font-semibold text-gray-700">정리 엑셀 미리보기 <span class="text-xs text-blue-600 font-normal ml-2">(칸을 클릭하여 텍스트 수정 및 행 삭제/추가 가능)</span></label>
+                        <button onclick="downloadExcel()" class="text-xs bg-green-600 hover:bg-green-700 text-white font-semibold py-1 px-3 rounded inline-flex items-center transition shadow-sm">
+                            엑셀 다운로드
+                        </button>
+                    </div>
+                    
+                    <div class="overflow-y-auto max-h-80 border border-gray-300 rounded-md shadow-inner bg-gray-50 relative">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-100 sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-4 py-2 font-semibold text-gray-700">강사이름</th>
+                                    <th class="px-4 py-2 font-semibold text-gray-700 text-right">고용</th>
+                                    <th class="px-4 py-2 font-semibold text-gray-700 text-right">산재</th>
+                                    <th class="px-4 py-2 font-semibold text-gray-700 text-right">합계</th>
+                                    <th class="px-4 py-2 font-semibold text-gray-700 text-center w-12">삭제</th>
+                                </tr>
+                            </thead>
+                            <tbody id="preview-table-body" class="divide-y divide-gray-200 bg-white">
+                                <!-- Data will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- 추가된 제어 버튼 -->
+                    <div class="flex justify-between items-center mt-3 mb-2">
+                        <button onclick="addRow()" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-1.5 px-3 rounded inline-flex items-center transition border border-gray-300">
+                            + 행 추가
+                        </button>
+                        <button onclick="generateMessage()" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded shadow-sm transition">
+                            수정사항 안내문에 반영 ↓
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Text Message Output -->
+                <div class="flex flex-col h-full w-full">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-sm font-semibold text-gray-700">안내문 (문자 발송용)</label>
+                        <button onclick="copyMessage()" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1 px-3 rounded inline-flex items-center transition">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                            복사하기
+                        </button>
+                    </div>
+                    <textarea id="message-result" readonly class="w-full h-80 p-4 bg-gray-50 border border-gray-300 rounded-md text-sm resize-none focus:outline-none text-gray-800"></textarea>
+                    <p id="copy-status" class="text-green-600 text-xs font-semibold mt-2 hidden">클립보드에 복사되었습니다!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let finalExcelData = [];
+
+        function showMessage(msg, isError = false) {
+            const msgBox = document.getElementById('message-box');
+            msgBox.textContent = msg;
+            msgBox.className = `mb-6 p-4 rounded-md text-sm font-medium block ${isError ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`;
+            
+            if (isError) {
+                document.getElementById('troubleshoot-box').classList.remove('hidden');
+            } else {
+                document.getElementById('troubleshoot-box').classList.add('hidden');
+            }
+        }
+
+        function hideMessage() {
+            document.getElementById('message-box').className = 'hidden';
+            document.getElementById('troubleshoot-box').classList.add('hidden');
+        }
+
+        async function processFiles() {
+            hideMessage();
+            const empFile = document.getElementById('emp-file').files[0];
+            const indFile = document.getElementById('ind-file').files[0];
+            const schoolName = document.getElementById('school-name').value;
+            const depositDate = document.getElementById('deposit-date').value;
+            const bankName = document.getElementById('bank-name').value;
+            const accountNumber = document.getElementById('account-number').value;
+
+            if (!empFile || !indFile) {
+                showMessage('고용보험 파일과 산재보험 파일을 모두 업로드해주세요.', true);
+                return;
+            }
+            if (!schoolName) {
+                showMessage('학교명을 입력해주세요.', true);
+                return;
+            }
+            if (!depositDate) {
+                showMessage('입금일을 선택해주세요.', true);
+                return;
+            }
+            if (!bankName || !accountNumber) {
+                showMessage('은행명과 계좌번호를 입력해주세요.', true);
+                return;
+            }
+
+            try {
+                const [empData, indData] = await Promise.all([
+                    readExcelFile(empFile),
+                    readExcelFile(indFile)
+                ]);
+
+                const empResult = parseExcel(empData, 'emp');
+                const indResult = parseExcel(indData, 'ind');
+
+                generateFinalData(empResult, indResult);
+            } catch (error) {
+                console.error("에러 상세:", error);
+                showMessage('파일을 처리하는 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'), true);
+            }
+        }
+
+        function readExcelFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        resolve(workbook);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // 엑셀 파싱 로직 (경험적 헤더 탐색 알고리즘 적용)
+        function parseExcel(workbook, type) {
+            if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+                throw new Error("엑셀 시트를 찾을 수 없습니다.");
+            }
+            
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+            if (!rows || rows.length === 0) {
+                throw new Error("엑셀 파일에 데이터가 없습니다.");
+            }
+
+            let headerRowIdx = -1;
+            let nameColIdx = -1;
+            let targetColIdx = -1; // 고용보험 특정 타겟 (근로자실업급여)
+            let totalColIdx = -1;  // 합계 타겟
+
+            // 1. 헤더 행 및 열 인덱스 찾기
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row) continue;
+                
+                for (let j = 0; j < row.length; j++) {
+                    const cell = String(row[j] || '').replace(/\s+/g, '');
+                    if (cell.includes('성명') || cell === '이름' || cell.includes('근로자명') || cell.includes('가입자명')) {
+                        headerRowIdx = i;
+                        nameColIdx = j;
+                    }
+                }
+                
+                if (headerRowIdx !== -1) {
+                    for (let j = 0; j < row.length; j++) {
+                        const cell = String(row[j] || '').replace(/\s+/g, '');
+                        if (type === 'emp' && (cell.includes('근로자실업급여') || cell.includes('근로자부담'))) {
+                            targetColIdx = j;
+                        }
+                        if (cell.includes('합계') || cell.includes('보험료합계') || cell === '계' || cell === '총계' || cell.includes('총액')) {
+                            totalColIdx = j;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            const results = {};
+            if (headerRowIdx === -1) {
+                throw new Error("이름/성명/근로자명 등의 열 제목을 찾을 수 없습니다. 양식을 확인해주세요.");
+            }
+
+            // 2. 데이터 추출
+            for (let i = headerRowIdx + 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || !row[nameColIdx]) continue;
+                
+                const name = String(row[nameColIdx]).trim();
+                if (name === '합계' || name === '총계' || name === '' || name.includes('총액')) continue;
+
+                let val = 0;
+                
+                if (type === 'emp') {
+                    // 고용보험: 근로자실업 급여보험료 열 우선, 없으면 합계 / 2
+                    if (targetColIdx !== -1 && row[targetColIdx] !== undefined) {
+                        val = parseInt(String(row[targetColIdx]).replace(/,/g, ''), 10) || 0;
+                    } else if (totalColIdx !== -1 && row[totalColIdx] !== undefined) {
+                        const totalVal = parseInt(String(row[totalColIdx]).replace(/,/g, ''), 10) || 0;
+                        val = Math.floor(totalVal / 2); 
+                    }
+                } else {
+                    // 산재보험: 합계 / 2
+                    if (totalColIdx !== -1 && row[totalColIdx] !== undefined) {
+                        const totalVal = parseInt(String(row[totalColIdx]).replace(/,/g, ''), 10) || 0;
+                        // 통상적인 1원 단위 절사 (10원 단위로 맞춤) 처리를 적용하여 정확도 향상
+                        val = Math.floor(totalVal / 2);
+                        // val = Math.floor((totalVal / 2) / 10) * 10; // 만약 절사가 필요하다면 이 줄을 사용
+                    }
+                }
+                
+                results[name] = val;
+            }
+            return results;
+        }
+
+        function generateFinalData(empResult, indResult) {
+            // 강사 이름 목록 병합 및 정렬
+            const nameSet = new Set([...Object.keys(empResult), ...Object.keys(indResult)]);
+            const sortedNames = Array.from(nameSet).sort();
+
+            finalExcelData = [];
+
+            sortedNames.forEach(name => {
+                const empVal = empResult[name] || 0;
+                const indVal = indResult[name] || 0;
+                const totalVal = empVal + indVal;
+
+                // 엑셀용 데이터 배열 생성
+                finalExcelData.push({
+                    '강사이름': name,
+                    '고용': empVal,
+                    '산재': indVal,
+                    '합계': totalVal
+                });
+            });
+
+            renderTable();
+            generateMessage();
+            
+            document.getElementById('output-section').classList.remove('hidden');
+            showMessage('데이터 처리가 완료되었습니다. 필요시 표의 내용을 수정하고 [수정사항 안내문에 반영] 버튼을 눌러주세요.');
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('preview-table-body');
+            tbody.innerHTML = '';
+            
+            finalExcelData.forEach((row, index) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-2 py-1"><input type="text" value="${row['강사이름']}" oninput="updateRow(${index}, '강사이름', this.value)" class="w-full px-2 py-1 border border-transparent hover:border-gray-300 focus:border-blue-500 rounded outline-none bg-transparent text-gray-800 transition-colors"></td>
+                    <td class="px-2 py-1"><input type="number" value="${row['고용']}" oninput="updateRow(${index}, '고용', this.value)" class="w-full px-2 py-1 border border-transparent hover:border-gray-300 focus:border-blue-500 rounded outline-none bg-transparent text-gray-600 text-right transition-colors"></td>
+                    <td class="px-2 py-1"><input type="number" value="${row['산재']}" oninput="updateRow(${index}, '산재', this.value)" class="w-full px-2 py-1 border border-transparent hover:border-gray-300 focus:border-blue-500 rounded outline-none bg-transparent text-gray-600 text-right transition-colors"></td>
+                    <td class="px-4 py-2 font-bold text-gray-800 text-right" id="total-${index}">${row['합계'].toLocaleString()}원</td>
+                    <td class="px-2 py-1 text-center"><button onclick="deleteRow(${index})" class="text-red-500 hover:text-white hover:bg-red-500 rounded px-2 py-1 font-bold transition">&times;</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateRow(index, field, value) {
+            if (field === '고용' || field === '산재') {
+                finalExcelData[index][field] = parseInt(value) || 0;
+                finalExcelData[index]['합계'] = finalExcelData[index]['고용'] + finalExcelData[index]['산재'];
+                document.getElementById(`total-${index}`).innerText = finalExcelData[index]['합계'].toLocaleString() + '원';
+            } else {
+                finalExcelData[index][field] = value;
+            }
+        }
+
+        function deleteRow(index) {
+            finalExcelData.splice(index, 1);
+            renderTable();
+        }
+
+        function addRow() {
+            finalExcelData.push({
+                '강사이름': '',
+                '고용': 0,
+                '산재': 0,
+                '합계': 0
+            });
+            renderTable();
+        }
+
+        function generateMessage() {
+            const schoolName = document.getElementById('school-name').value;
+            const dateStr = document.getElementById('deposit-date').value;
+            const bankName = document.getElementById('bank-name').value;
+            const accountNumber = document.getElementById('account-number').value;
+
+            if (!schoolName || !dateStr || !bankName || !accountNumber) {
+                showMessage('학교명, 입금일, 은행명, 계좌번호를 확인해주세요.', true);
+                return;
+            }
+
+            let textMessageNames = '';
+            finalExcelData.forEach(row => {
+                // 합계가 0원보다 크고 이름이 비어있지 않은 경우만 안내문에 포함
+                if(row['합계'] > 0 && row['강사이름'].trim() !== '') {
+                    textMessageNames += `${row['강사이름']} ${row['합계'].toLocaleString()}원 /\n`;
+                }
+            });
+
+            // 안내 메시지 구성
+            const dateObj = new Date(dateStr);
+            const nMonth = dateObj.getMonth() + 1; 
+            const empMonth = nMonth - 2 <= 0 ? (nMonth - 2 + 12) : (nMonth - 2);
+            const indMonth = nMonth - 1 <= 0 ? (nMonth - 1 + 12) : (nMonth - 1);
+            
+            const yearStr = String(dateObj.getFullYear()).slice(-2);
+            const monthStr = dateObj.getMonth() + 1;
+            const dayStr = dateObj.getDate();
+
+            const messageTemplate = `선생님 안녕하세요
+${schoolName} 행정실입니다.
+${nMonth}월고지된 고용(${empMonth}월)산재(${indMonth}월) 본인부담금 안내드리오니 입금부탁드립니다.
+
+*반드시 본 문자에 안내된 계좌로 입금하셔야 하며 다른 계좌로 입금하지 않도록 확인부탁드립니다.*
+
+
+${textMessageNames}
+입금일: ${yearStr}. ${monthStr}. ${dayStr}.까지
+입금계좌: ${bankName} ${accountNumber}`;
+
+            document.getElementById('message-result').value = messageTemplate;
+        }
+
+        function copyMessage() {
+            const textarea = document.getElementById('message-result');
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                const status = document.getElementById('copy-status');
+                status.classList.remove('hidden');
+                setTimeout(() => {
+                    status.classList.add('hidden');
+                }, 2000);
+            } catch (err) {
+                console.error('복사 실패', err);
+            }
+            // 선택 해제
+            window.getSelection().removeAllRanges();
+        }
+
+        function downloadExcel() {
+            if (finalExcelData.length === 0) return;
+
+            const worksheet = XLSX.utils.json_to_sheet(finalExcelData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "보험료정리");
+
+            XLSX.writeFile(workbook, "방과후강사_고용산재_정리.xlsx");
+        }
+    </script>
+</body>
+</html>
